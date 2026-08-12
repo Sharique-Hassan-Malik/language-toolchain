@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+.pytest_cache/
+profile.json
+flamegraph.html
+.DS_Store

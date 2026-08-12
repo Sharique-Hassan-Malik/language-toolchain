@@ -1,0 +1,83 @@
+name: PPRA Tender Scraper
+
+# ---------------------------------------------------------------------------
+# THIS WORKFLOW IS DORMANT BY DEFAULT — IT WILL NOT RUN UNTIL YOU OPT IN.
+# ---------------------------------------------------------------------------
+# Two safety gates, both off out of the box:
+#
+#   1. Folder name. This file ships under  github/workflows/  (no leading dot),
+#      which GitHub does NOT treat as a workflow, so nothing runs at all. To
+#      activate scheduled runs, rename the folder:   mv github .github
+#
+#   2. Enable switch. Even after activating, the hourly schedule stays OFF until
+#      you explicitly turn it on:
+#        Settings → Secrets and variables → Actions → Variables
+#        Set  SCRAPER_ENABLED = true      (unset or anything else = stays off)
+#
+# A manual one-off run is always available via  Actions → Run workflow
+# (workflow_dispatch), independent of SCRAPER_ENABLED.
+# ---------------------------------------------------------------------------
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour
+
+  workflow_dispatch:
+    inputs:
+      enabled:
+        description: "Run the scraper? (uncheck to skip)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+
+    # Scheduled runs happen ONLY when SCRAPER_ENABLED is explicitly "true"
+    # (default off). Manual runs happen unless the Enabled box is unchecked.
+    if: >
+      (github.event_name == 'schedule'         && vars.SCRAPER_ENABLED == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.enabled == true)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r scraper/requirements.txt
+
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Clean previous outputs
+        run: |
+          rm -rf ppra_pdfs
+          mkdir -p ppra_pdfs
+          find . -name "*.xlsx" -type f -delete
+
+      - name: Decode Gmail credentials
+        run: |
+          echo "${{ secrets.CREDENTIALS_JSON }}" | base64 --decode > scraper/credentials.json
+          echo "${{ secrets.TOKEN_JSON }}"        | base64 --decode > scraper/token.json
+
+      - name: Run scraper
+        env:
+          GMAIL_SENDER:    ${{ secrets.GMAIL_SENDER }}
+          GMAIL_RECIPIENT: ${{ secrets.GMAIL_RECIPIENT }}
+          # optional overrides (safe to leave unset):
+          PPRA_KEYWORDS:     ${{ vars.PPRA_KEYWORDS }}
+          PPRA_DNS_OVERRIDE: ${{ vars.PPRA_DNS_OVERRIDE }}
+        # run as a module from the repo root so the `scraper` package resolves
+        # (running `python scraper/main.py` directly breaks the package imports)
+        run: python -m scraper.main
+
+      - name: Log run time
+        run: echo "Completed at $(date -u)"

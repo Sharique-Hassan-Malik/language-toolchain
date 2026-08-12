@@ -1,0 +1,16 @@
+[package]
+name        = "zapc"
+version     = "1.0.0"
+edition     = "2021"
+description = "Zap toy-language compiler (Rust implementation)"
+
+[[bin]]
+name = "zapc"
+path = "src/main.rs"
+
+[lib]
+name = "zapc_lib"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
