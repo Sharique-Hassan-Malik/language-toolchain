@@ -66,61 +66,55 @@ class SATEncoder:
         Build the full initial clause set for the given root requirements.
 
         Returns a list of clauses (each clause is a list of literal integers).
+
+        Variables are created in a separate first pass. An AMO clause set is
+        only correct if it ranges over *every* version of a package that the
+        solver can select, so no clause may be emitted while variables are
+        still appearing.
         """
         clauses: list[list[int]] = []
-        seen_packages: set[str] = set()
 
-        # BFS over the dependency graph to build all variables and clauses
+        # ── Pass 1: create every variable ────────────────────────────────
+        #
+        # Requirements are keyed by name *and* constraint. Two constraints on
+        # the same package ("pkg>=2.0" and "pkg<2.0") select different
+        # candidates, so collapsing them on the name alone drops one set of
+        # versions from the encoding.
         queue: list[Requirement] = list(root_requirements)
-        visited_reqs: set[str] = set()
+        visited_reqs: set[tuple[str, str]] = set()
 
         while queue:
             req = queue.pop()
-            norm = _normalise_name(req.name)
-            if norm in visited_reqs:
+            key = (_normalise_name(req.name), str(req))
+            if key in visited_reqs:
                 continue
-            visited_reqs.add(norm)
+            visited_reqs.add(key)
 
-            candidates = self._index.candidates(req)
-
-            if not candidates:
-                # No versions satisfy this requirement — immediate UNSAT
-                # Encode as an empty clause (contradiction)
-                clauses.append([])
-                continue
-
-            # Create variables for all candidate versions
-            for pkg in candidates:
+            for pkg in self._index.candidates(req):
                 self.var(pkg.name, pkg.version)
-
-            # Recurse into dependencies
-            for pkg in candidates:
                 for dep in pkg.dependencies:
-                    dep_norm = _normalise_name(dep.name)
-                    if dep_norm not in visited_reqs:
+                    if (_normalise_name(dep.name), str(dep)) not in visited_reqs:
                         queue.append(dep)
 
-        # Now generate clauses for all packages we know about
-        all_pkg_names: set[str] = {v.name for v in self._vars.values()}
+        # ── Pass 2: clauses ──────────────────────────────────────────────
+        # Every variable now exists, so clause generation cannot create more.
+        # Grouping and ordering are by variable id, which makes the output
+        # identical from run to run regardless of hash seed.
+        by_package: dict[str, list[Variable]] = {}
+        for v in self._vars.values():
+            by_package.setdefault(v.name, []).append(v)
+        for pkg_vars in by_package.values():
+            pkg_vars.sort(key=lambda v: v.var_id)
 
-        for pkg_name in all_pkg_names:
-            all_versions = self._index.versions(pkg_name)
-            pkg_vars = [
-                self.var(pkg_name, p.version)
-                for p in all_versions
-                if (_normalise_name(pkg_name), str(p.version)) in {
-                    k for k in self._vars
-                }
-            ]
-            if not pkg_vars:
-                continue
+        for pkg_name in sorted(by_package):
+            pkg_vars = by_package[pkg_name]
 
             # AMO: not (v_i and v_j) for all i < j
             for i in range(len(pkg_vars)):
                 for j in range(i + 1, len(pkg_vars)):
                     clauses.append([-pkg_vars[i].var_id, -pkg_vars[j].var_id])
 
-            # Dependency implications: if pkg@v is selected, its deps must be satisfied
+            # Dependency implications: if pkg@v is selected, its deps must hold
             for pv in self._index.versions(pkg_name):
                 key = (_normalise_name(pkg_name), str(pv.version))
                 if key not in self._vars:
@@ -128,21 +122,28 @@ class SATEncoder:
                 v = self._vars[key]
                 for dep in pv.dependencies:
                     dep_cands = self._index.candidates(dep)
-                    if not dep_cands:
-                        # This version is impossible — forbid it
+                    dep_lits = [
+                        self._vars[(_normalise_name(d.name), str(d.version))].var_id
+                        for d in dep_cands
+                        if (_normalise_name(d.name), str(d.version)) in self._vars
+                    ]
+                    if not dep_lits:
+                        # Nothing can satisfy this dependency — forbid the version
                         clauses.append([-v.var_id])
                         continue
                     # v → (dep_v1 OR dep_v2 OR ...)
-                    dep_lits = [self.var(d.name, d.version).var_id for d in dep_cands]
                     clauses.append([-v.var_id] + dep_lits)
 
-        # ALO for root requirements: at least one satisfying version must be chosen
+        # ALO for root requirements: at least one satisfying version
         for req in root_requirements:
-            candidates = self._index.candidates(req)
-            if not candidates:
-                clauses.append([])   # contradiction
+            lits = [
+                self._vars[(_normalise_name(c.name), str(c.version))].var_id
+                for c in self._index.candidates(req)
+                if (_normalise_name(c.name), str(c.version)) in self._vars
+            ]
+            if not lits:
+                clauses.append([])   # contradiction: nothing satisfies it
                 continue
-            lits = [self.var(c.name, c.version).var_id for c in candidates]
             clauses.append(lits)
 
         return clauses

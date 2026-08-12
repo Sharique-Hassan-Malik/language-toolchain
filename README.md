@@ -8,7 +8,7 @@ A collection of 9 self-contained projects. Each lives in its own subdirectory wi
 
 | project | what it is |
 |---|---|
-| [`Dep_Resolver`](./Dep_Resolver) | A Python package dependency resolver that encodes the problem as a Boolean satisfiability (SAT) instance and solves it with a CDCL (Conflict-Driven… |
+| [`Dep-Resolver`](./Dep-Resolver) | A Python package dependency resolver that encodes the problem as a Boolean satisfiability (SAT) instance and solves it with a CDCL (Conflict-Driven… |
 | [`HyperLogLog`](./HyperLogLog) | Count the number of distinct items in a stream to within about a percent, using a fixed 16 KB — no matter whether the stream had a thousand items o… |
 | [`Promises-APlus`](./Promises-APlus) | A JavaScript Promise built to the Promises/A+ specification, and verified against the official 872-test conformance suite — the same suite the spec… |
 | [`Pyflame`](./Pyflame) | A sampling profiler that captures periodic call stack snapshots, aggregates them into a call tree and renders an interactive flame graph in the bro… |
@@ -23,7 +23,7 @@ A collection of 9 self-contained projects. Each lives in its own subdirectory wi
 Each subdirectory is a standalone project; there is no shared build. Enter one and follow its README:
 
 ```bash
-cd Dep_Resolver
+cd Dep-Resolver
 cat README.md
 ```
 
