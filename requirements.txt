@@ -1,0 +1,3 @@
+# The compiler, runtime, profiler, resolver and multiplexer are standard
+# library only. The regex engine needs a JDK; the parser combinators need Node.
+pytest>=7
